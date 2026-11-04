@@ -2,8 +2,9 @@
 
 Part of the [ASUS ROG Strix OLED XG34WCDG protocol reference](README.md). One row per code or area; the tags are
 explained in the README. "Read" means the code answered the probe of 2026-11-01 and every later read; "OSD-correlated"
-means the owner changed the named OSD item and only this code moved accordingly (2026-11-01). **No row was ever
-written to the monitor.**
+means the owner changed the named OSD item and only this code moved accordingly (2026-11-01). **"Written" means the
+write session of 2026-11-04 set the code and read the value back** (document sections 5 to 7); a row without that word
+was never written.
 
 ## DDC/CI
 
@@ -15,7 +16,7 @@ written to the monitor.**
 | NC maximum field | passed through by dxva2 | complete | yes | n/a | |
 | `0x02`, `0x52` | MCCS change flags | complete | yes; never move | no change in 38 snapshots | |
 | `0x04`, `0x08` | MCCS resets (write-only) | complete (PUBLISHED) | not read | | **do not send** |
-| `0x10` | brightness | complete | yes | per-mode values seen | behaviour of a write under a lock |
+| `0x10` | brightness | complete | yes | per-mode values seen; moved with GameVisual and Uniform Brightness writes | a direct write on this unit (the same code was written on another monitor) |
 | `0x12` | contrast | complete | yes | no | |
 | `0x14` | colour preset | complete | yes | 6500 K, 7500 K, User 1 | |
 | `0x16` / `0x18` / `0x1A` | RGB gains | complete | yes | `0x1A` with the Blue Light Filter | |
@@ -52,7 +53,10 @@ written to the monitor.**
 | lock marker | `0xFE` of `0xFE` | complete | yes | 4 codes, 3 conditions | write behaviour |
 | per-mode storage | brightness, preset, gamma, Shadow Boost | complete for 3 modes | yes | yes | |
 | stability | 60 s polling for 2.5 days, three sleeps | | yes | n/a | standby, cleaning, proximity screen-off |
-| writes | | guidance only | **never sent** | | everything about writing |
+| writes | 47 `SetVCPFeature` on 2026-11-04 (section 7) | observed rules | **written:** `0x14`, `0xDC` (both bytes), `0xE5`, `0xE6`, `0xED` (both bytes), `0xF2` (both bytes), `0xF8`, `0xF9`, `0xFC` bits `0x0001` and `0x0010`, `0xFD` bits `0x0001`, `0x0008`, `0x0020`, `0x0040`, `0x0800`, `0x1000`, `0x2000`, `0x4000`; all taken and read back | n/a | `0x10`, `0x12` and the standard colour codes on this unit; `0xFD` `0x0010` (never); `0xED` `00`/`FF`; the GamePlus, KVM, PIP and shortcut codes |
+| silent ignore | a write the monitor drops without an error | observed for three cases | yes: `0xDC` under Windows HDR, an Aura effect while Aura Sync is on, Aura colour `00` | n/a | the same under Uniform Brightness and Anti-Flicker |
+| VRR write | re-plugs the display, handle lost (`0xC026258D`) for about 10 s | observed | yes, both directions | n/a | |
+| power button / other input | DDC/CI stays alive, `0xD6` reads on, Windows keeps the display (section 6.7) | observed | yes | n/a | standby by Windows, pixel cleaning, proximity screen-off |
 
 ## USB
 
@@ -75,6 +79,15 @@ written to the monitor.**
 
 ## Change log
 
+- **2026-11-04 (evening), second edition: the first writes.** 47 `SetVCPFeature` writes to this unit between 14:44 and
+  16:06 (one setting per write, the owner approving each and restoring every value), plus the monitor switched off by its
+  button and set to another input while being read. Added: section 6.7 and the "Writes" paragraphs of sections 5.2, 5.5,
+  5.7, 5.9 and 5.10; section 7 rewritten from guidance to observed rules; the `0xC026258D` row for VRR; open items 1 and
+  2 updated. New compared with what was public before: the monitor **silently ignores** a write to an HDR-locked control,
+  an Aura effect while Aura Sync is on, and Aura colour `00` (no error, old value on read-back); Static Aura starts red
+  and the colour byte persists across effects; a VRR change re-plugs the display; Logo Detection is writable while
+  Global Dimming is off; the power button is a panel-off that leaves DDC/CI, the DisplayPort link and `0xD6` = on alive;
+  another input keeps DDC/CI alive with `0x60` showing it, and the HDR word and brightness are per input.
 - **2026-11-04, first edition.** Written from the read-only DDC/CI probe of 2026-11-01 (capability string and every
   listed code), 38 OSD-correlation snapshots of the same evening (35 change rounds and one reading with Windows HDR on),
   a session-0 comparison, read-only polling from 2026-11-01 to 11-04, Windows' device properties, registry and EDID,

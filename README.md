@@ -24,7 +24,9 @@ which published claims held on this model, and what is still unknown.
 
 There was **no USB capture** of this monitor, and nothing was ever sent to its USB functions: the USB (Aura) path in
 section 9 is documented from published sources and from the device properties Windows records, and is unverified on
-this model. No DDC/CI write was ever sent to this monitor either: everything about writing is guidance.
+this model. On the afternoon of 2026-11-04 the same third-party code sent 47 DDC/CI writes to the monitor, one setting
+at a time with the owner approving each and restoring every value, so the writing rules of section 7 are observed on
+this unit (sections 5 to 7 say which codes were written and what the monitor did).
 
 New compared with what was public before:
 
@@ -47,6 +49,12 @@ New compared with what was public before:
   stable for days and across sleep.
 - **DisplayWidget Center's bootstrapper** in the monitor's driver package, which Windows starts at driver installation
   and which downloads ASUS's software.
+- **What the monitor does with writes** (2026-11-04): every mapped setting a host would change was written and read
+  back; the monitor **silently ignores** (no error, old value on read-back) a write to a control its HDR interlock has
+  locked, an Aura effect while Aura Sync is on, and Aura colour `00`; Static Aura starts red and the colour byte
+  persists; a VRR change re-plugs the display and destroys the DDC/CI handle for about ten seconds; Logo Detection is
+  writable while Global Dimming is off; the power button is a panel-off that keeps DDC/CI, the DisplayPort link and
+  "power on" alive, and another selected input keeps DDC/CI alive too.
 
 ## Scope
 
@@ -64,7 +72,7 @@ Every statement carries one of these tags.
 
 | Tag | Meaning |
 |---|---|
-| **OBSERVED** | seen on this unit through Windows' DDC/CI API by independently written third-party code (not ASUS's software), with the date: the read-only probe of 2026-11-01, the OSD-correlation rounds (the owner changed one OSD setting, the code read every VCP code before and after), the session test, and the read-only polling of 2026-11-01 to 11-04. Things the owner saw on the monitor itself are marked "OBSERVED by the owner" |
+| **OBSERVED** | seen on this unit through Windows' DDC/CI API by independently written third-party code (not ASUS's software), with the date: the read-only probe of 2026-11-01, the OSD-correlation rounds (the owner changed one OSD setting, the code read every VCP code before and after), the session test, the read-only polling of 2026-11-01 to 11-04, and the write session of 2026-11-04 (one `SetVCPFeature` per setting, read back and restored). Things the owner saw on the monitor itself are marked "OBSERVED by the owner" |
 | **METADATA** | read from ASUS's installed software without running it: printable strings, version resources and .NET metadata of the executables in the monitor's driver package, and file names; also the monitor's EDID and capability string read as data |
 | **PUBLISHED** | first published by an open-source project, by ASUS (user guide, product pages, FAQ, its command-line tool's documentation), by VESA (MCCS, DDC/CI) or in Microsoft documentation, which is named. Where this unit confirmed it, the statement says so |
 | **HOST** | read on the observing PC without driving the device: Windows device properties, hardware ids, driver bindings, registry values, the driver package's INF |
@@ -73,11 +81,14 @@ Every statement carries one of these tags.
 
 ## Bench sessions
 
-Times are local time of the observing PC (UTC-7). All sessions only read: no DDC/CI write, no capability request after
-the probe, no USB handle, no ASUS program run.
+Times are local time of the observing PC (UTC-7). Every session up to the afternoon of 2026-11-04 only read: no DDC/CI
+write, no capability request after the probe, no USB handle, no ASUS program run. The write session of 2026-11-04 sent
+DDC/CI writes only (no USB, no ASUS program).
 
 | Date and time | What was done |
 |---|---|
+| 2026-11-04 14:44 to 16:06 | the write session: 47 `SetVCPFeature` writes, one setting per write, each read back after 50 ms with every listed code re-read afterwards, the owner approving each write and watching the panel, the back light and the power LED; Windows HDR on except 15:20 to 15:30 and 16:05 to 16:07; every value restored (sections 5 to 7) |
+| 2026-11-04 15:43 to 15:53 | reads while the owner switched the monitor off by its button (twice) and set it to an input with no signal (section 6.7) |
 | 2026-10-21 | Windows device properties, registry, the driver package's INF and its two executables (strings and metadata), the EDID (HOST, METADATA) |
 | 2026-11-01 18:57:19 to 18:57:31 | the probe: capability string, then current and maximum of every listed code (Windows HDR off, DDC/CI on in the OSD, unelevated, user session) |
 | 2026-11-01 19:03:59 to 19:44:18 | 37 snapshots of the 52 readable codes: two baselines and 35 rounds of one or two OSD changes by the owner (Shadow Boost, Blue Light Filter, Color Temp., three GameVisual modes, Uniform Brightness, Screen Move, the cleaning reminder, Auto Input Detection, OLED Anti-Flicker, the three dimming controls, taskbar, logo and boundary detection, the proximity sensor's distance and timer, Aura Sync, Aura effect and colour, the power indicator, VRR, VividPixel, Display Color Space, Aspect Control, Sniper); the monitor ended as it started |
@@ -183,8 +194,9 @@ descriptor; and a USB capture of Armoury Crate driving the Aura device. See [STA
 
 ## Safety
 
-Apart from the OBSERVED statements, nothing here was tested, and no write was ever sent to the observed monitor; anyone
-writing to their own monitor does so at their own risk. In particular:
+Apart from the OBSERVED statements, nothing here was tested; the writes of 2026-11-04 were made to one unit, one at a
+time, each read back and restored, with a person watching the panel. Anyone writing to their own monitor does so at
+their own risk. In particular:
 
 - this is an OLED panel: settings that weaken its burn-in protection, and starting or interrupting a pixel cleaning,
   have lasting consequences; `0xFD` mixes panel-care toggles with the cleaning trigger in one word;

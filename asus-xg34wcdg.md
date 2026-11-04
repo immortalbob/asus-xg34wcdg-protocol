@@ -13,8 +13,12 @@ processes in the signed-in user's session only. The monitor answers a 950-byte c
 and speaks ASUS's newer manufacturer-code scheme, which it reports as version 2.17. Above `0xDF` most codes are ASUS's
 own; several pack two settings into the two bytes of one code, and two (`0xFC`, `0xFD`) are bit fields. A control that
 another setting has locked reads `0xFE` of `0xFE`. The monitor's USB hub carries an Aura lighting device (`0B05:1C2B`)
-whose protocol is known only from sibling monitors; its effects are also reachable over DDC/CI (`0xF2`). No write was
-ever sent to this unit: everything below about writing is guidance, not observation.
+whose protocol is known only from sibling monitors; its effects are also reachable over DDC/CI (`0xF2`). On 2026-11-04
+third-party code sent 47 `SetVCPFeature` writes to this unit ("the write session", 14:44 to 16:06, one setting per
+write, each read back and restored): every mapped setting of sections 5.1 to 5.10 that a host would change was taken,
+and the rules of section 7 are now observed, not guidance. Three things the monitor ignores silently (no error, the old
+value reads back): any write to a control its HDR interlock has locked, an Aura effect while Aura Sync is on, and Aura
+colour `00`. A VRR change re-plugs the display.
 
 ## 1. Device
 
@@ -38,7 +42,7 @@ reference.
 
 | Path | Carries | Status here |
 |---|---|---|
-| DDC/CI over the video cable (MCCS VCP codes), reached through `dxva2.dll` | brightness and colour, GameVisual, HDR mode, panel care, proximity sensor, Aura effect, power indicator, identity | read side OBSERVED code by code; no write sent |
+| DDC/CI over the video cable (MCCS VCP codes), reached through `dxva2.dll` | brightness and colour, GameVisual, HDR mode, panel care, proximity sensor, Aura effect, power indicator, identity | read side OBSERVED code by code; writes OBSERVED 2026-11-04 for every mapped setting (section 7) |
 | USB HID, interface 1 of `0B05:1C2B` ("ROG Gaming Display Aura Device") | per-LED Aura colours through ASUS's Armoury Crate, per the user guide | PUBLISHED for sibling monitors only; nothing sent (section 9) |
 | USB vendor interface 0 of `0B05:1C2B` (WinUSB) | an ENE controller's vendor channel (INFERRED, section 9.3) | **do not use** |
 | USB HID `0BDA:1100` behind the monitor's hub | UNKNOWN (section 9.3) | **do not use** |
@@ -146,11 +150,14 @@ on Windows without the capability string.
 | `0xC0262584` | `ERROR_GRAPHICS_DDCCI_VCP_NOT_SUPPORTED` | every read of `0xE8`, `0xEB` and `0xEC`, the write-only command codes (section 5.4) | OBSERVED, the probe |
 | `0xC026258D` | `ERROR_GRAPHICS_MONITOR_NO_LONGER_EXISTS` ("the operating system asynchronously destroyed the monitor which corresponds to this handle") | seven passes between 2026-11-01 20:33 and 20:52; each time, closing the handle and taking a new one at the next pass (one to two minutes later) worked | OBSERVED |
 | `0xC02625E5` | (session 0, section 2.2) | every call from session 0 | OBSERVED |
+| `0xC026258D` again | | every read of `0xFD` for about 10 s after a **VRR write** (2026-11-04 16:01:10 and 16:01:16): the change re-plugs the display, the screen blanks (OBSERVED by the owner) and the handle dies; a new handle at the next pass worked | OBSERVED, the write session |
 
-The `0xC026258D` episode fell in the period in which a browser played HDR video and Windows' HDR (advanced colour)
+The first `0xC026258D` episode fell in the period in which a browser played HDR video and Windows' HDR (advanced colour)
 was found on for this display (section 6.5). Windows invalidates physical-monitor handles on display-mode changes, and
-an HDR switch is one (INFERRED from the error text). Do not cache handles across display changes; on this error, take
-a new handle (OBSERVED to work).
+an HDR switch is one (INFERRED from the error text); a VRR change is another (OBSERVED, section 5.10). Do not cache
+handles across display changes; on this error, take a new handle (OBSERVED to work). A write that re-plugs the display
+cannot be read back at once: the read-back fails, and the value is confirmed by the first read after the new handle
+(OBSERVED: both VRR writes had landed).
 
 ## 3. Capability string
 
@@ -318,8 +325,13 @@ values and behaviour are OBSERVED on this unit unless tagged otherwise.
   of sumi's sRGB `03` as on the sibling (INFERRED for the six unseen values).
 - **The high byte is new.** The capability string lists `0000 0100 0200` (OBSERVED); no public map names it.
 - Changing GameVisual restores that mode's brightness, colour preset, gamma and Shadow Boost (section 6.2).
-- A write must change one byte and keep the other as read (INFERRED from the packing; sumi writes the low byte and keeps
-  the high byte, **PUBLISHED**).
+- A write must change one byte and keep the other as read (sumi writes the low byte and keeps the high byte,
+  **PUBLISHED**; OBSERVED to work on this unit, the write session).
+- **Writes (OBSERVED, the write session):** with Windows HDR off, low byte Racing `0x0005` → Cinema `0x0001` (15:26:34)
+  and back (15:26:43) were taken; Cinema brought brightness 90 and colour preset 7500 K, Racing brought 95 and 6500 K
+  back (section 6.2). High byte Wide Gamut → sRGB `0x0105` (15:27:21) and back were taken with the low byte kept. **With
+  Windows HDR on, the same Racing → Cinema write (15:02:28) returned no error and the code kept reading `0x0005`:** the
+  HDR interlock ignores the write silently (section 6.1).
 
 ### 5.3 `0xE2`: the HDR-mode word
 
@@ -379,6 +391,10 @@ At the HDR snapshot `0xED` read `0x0F00`, 15 minutes with low byte 0 (OBSERVED, 
 sensor between 19:44 and 20:41 or HDR changed it is UNKNOWN. Whether the sensor's presence state can be read is
 UNKNOWN (not tested). The maximum reads `0xFFFF` (OBSERVED).
 
+**Writes (OBSERVED, the write session):** high byte 5 → 10 min (`0x0502` → `0x0A02`, 14:55:14) and back, low byte 90 →
+60 cm (`0x0502` → `0x0503`, 16:00:24) and back, each taken with the other byte kept and read back; Windows HDR was on.
+`00` and `FF` were not written.
+
 ### 5.6 `0xEE`, `0xF0`, `0xF7`, `0xFA`
 
 - **`0xEE`** has read the lock marker `0x00FE` of `0x00FE` in every read since the probe (OBSERVED). plasma-asus names it
@@ -405,9 +421,25 @@ Static red `0x0104` (19:32:41) → Static blue `0x0304` (19:33:20) → Aura Sync
 - The OSD offers an effect only with Aura Sync off (OBSERVED; **PUBLISHED**, ASUS user guide p. 3-11). Leaving Aura Sync
   set the low byte to `00`.
 - plasma-asus states that Aura off must be written as the whole word `0x0000` (**PUBLISHED**): clear the colour byte too.
+  On this unit a low-byte-only off (`0x0301` → `0x0300`, colour kept) was taken as well (OBSERVED, the write session).
 - This gives the stored Aura effects without the USB path (section 9). With Aura Sync on, what the LEDs show is decided
   by USB (Armoury Crate) per the user guide (**PUBLISHED**, p. 3-16); with no USB host, what Aura Sync shows was not
   recorded (UNKNOWN).
+
+**Writes (OBSERVED, the write session, Windows HDR on; the owner watched the light on the monitor's back):**
+
+| Time | Write | Result |
+|---|---|---|
+| 14:44:32 | Aura Sync `0x0001` → Rainbow `0x0002` | **ignored**: no error, read back `0x0001`. The monitor takes no effect while Aura Sync is on; the OSD's rule (effects only with Aura Sync off) holds over DDC/CI too |
+| 14:49:43, 14:49:47 | → off `0x0000`, then → Rainbow `0x0002` | both taken; the light ran a rainbow |
+| 14:50:31 | Rainbow → Aura Sync `0x0001` | taken: Aura Sync is accepted from any effect |
+| 14:51:24, 14:51:28 | → off, → Static `0x0004` | taken; **the monitor set the colour byte to `01` (red) by itself**: the word read `0x0104`. `00` is the value of a colour never chosen, and Static starts red |
+| 14:51:33 | colour red → blue `0x0304` | taken; the light turned blue |
+| 14:52:27 | Static → Aura Sync | taken; the word read `0x0301`: **the colour byte persists across effects** |
+| 14:52:47 | colour blue → `00` (`0x0001`) | **ignored**: no error, read back `0x0101` (red). `00` cannot be written; a host should offer colours `01`-`06` only |
+
+So the sequence to set an effect from Aura Sync is two writes, off then the effect; a host that writes the effect
+straight away sees the old value on read-back and nothing on the light (OBSERVED).
 
 ### 5.8 `0xF3` to `0xFB`
 
@@ -428,6 +460,11 @@ Static red `0x0104` (19:32:41) → Static blue `0x0304` (19:33:20) → Aura Sync
 | `0x0010` | Auto Input Detection (set = on) | off `0x0801` (19:15:17), on `0x0811` (19:16:22) (OBSERVED; **PUBLISHED**, sumi) |
 | `0x0002`, `0x0004`, `0x0008`, `0x0080` | UNKNOWN | clear throughout |
 | `0x0800` | UNKNOWN | set throughout |
+
+Writes (OBSERVED, the write session): power indicator `0x0811` → `0x0810` (14:53:39; the LED under the panel went out,
+OBSERVED by the owner) and back; Auto Input Detection `0x0811` → `0x0801` (15:50:23) and back (15:53:17). Each a
+read-modify-write of one bit with the other bits as read; all four taken and read back. While Auto Input Detection is
+on, the OSD refuses an input choice (OBSERVED by the owner), so a host that wants to switch inputs clears it first.
 
 ### 5.10 `0xFD`: bit field (mask `0x787D`)
 
@@ -455,7 +492,22 @@ Static red `0x0104` (19:32:41) → Static blue `0x0304` (19:33:20) → Aura Sync
 - **The pixel-cleaning bit is an action, not a setting.** On the siblings, setting it starts a cleaning of about six
   minutes, it reads 1 while the cleaning runs, and the monitor drops off DDC/CI during the run (**PUBLISHED**, sumi and
   pixel-clean-gui). On this unit it is UNKNOWN whether the bit behaves the same. A read-modify-write of `0xFD` that
-  carries a set `0x0010` back would start a cleaning (INFERRED).
+  carries a set `0x0010` back would start a cleaning (INFERRED). It read 0 throughout the write session, and no write
+  ever set it (OBSERVED).
+
+**Writes (OBSERVED, the write session; each a read-modify-write of one bit, the other nine as read; Windows HDR on
+except where noted):**
+
+| Time | Bit | Write | Result |
+|---|---|---|---|
+| 15:00:23, 15:00:28 | `0x0800` Taskbar Detection | `0x7829` → `0x7029` → `0x7829` | taken, read back |
+| 16:01:10, 16:01:16 | `0x0001` VRR | `0x7829` → `0x7828` → `0x7829` | **taken, and each change re-plugged the display**: the screen blanked (OBSERVED by the owner), every read failed with `0xC026258D` for about 10 s (section 2.5), and the value was confirmed by the first read on a new handle (the second write's fresh read saw `0x7828`) |
+| 16:03:03 to 16:03:30 | `0x0008` Screen Dimming, `0x1000` Boundary, `0x2000` Outer Dimming | each off and on (`0x7821`, `0x6829`, `0x5829` and back) | taken, read back |
+| 16:04:12 to 16:04:28 | `0x4000` Global Dimming off (`0x3829`), then `0x0020` Logo Detection off (`0x3809`) and on, then Global on (`0x7829`) | | all taken: **Logo Detection is writable while Global Dimming is off**; the lock of the OSD applies only while Global is on |
+| 16:06:0x | `0x0040` Uniform Brightness, Windows HDR off | `0x7829` → `0x7869` → `0x7829` | taken; while on, `0x10` read 100 and `0xE6` showed the lock marker (section 6.1); off restored brightness 95 and `0xE6`'s value |
+
+A VRR write is the only one of the session that cost a handle; a host should expect the read-back to fail, keep the
+written value as "unconfirmed", and confirm it on the next pass (OBSERVED).
 
 ### 5.11 OSD items with no DDC code, and items not exercised
 
@@ -485,12 +537,16 @@ when the lock goes (OBSERVED):
 
 - Treat `0xFE`/`0xFE` as "locked", never as a level (INFERRED: `0xFE` is outside every range listed for these codes).
 - Brightness does **not** show the marker under these locks: it reads 100 of 100. A brightness write in HDR would pass a
-  marker check; whether the monitor refuses or ignores it is UNKNOWN (no write sent).
+  marker check (brightness itself was not written in HDR).
 - The OSD greys out far more items in HDR than the three codes that show the marker: GameVisual, Shadow Boost,
   brightness, contrast, colour temperature, saturation, gamma and others (**PUBLISHED**, ASUS user guide p. 3-5; OBSERVED
   by the owner). Over DDC/CI, contrast (`0x12`), colour preset (`0x14`), gamma (`0x72`), saturation and GameVisual
-  (`0xDC`) kept reading their SDR values in HDR (OBSERVED, the HDR snapshot). Whether writes to them are refused,
-  ignored or stored for SDR is UNKNOWN.
+  (`0xDC`) kept reading their SDR values in HDR (OBSERVED, the HDR snapshot).
+- **A write to a control the HDR interlock locks is ignored silently** (OBSERVED, the write session): GameVisual Racing →
+  Cinema with Windows HDR on (15:02:28) returned no error from `SetVCPFeature`, and `0xDC` kept reading `0x0005`; the
+  same write with HDR off (15:26:34) was taken. So a host cannot rely on an error, or on the lock marker, to learn that a
+  write was dropped: it must read the code back. The same silent ignore was seen for an Aura effect while Aura Sync is
+  on and for Aura colour `00` (section 5.7).
 
 ### 6.2 Settings stored per GameVisual mode (OBSERVED, 19:09 to 19:10)
 
@@ -533,15 +589,30 @@ evidence (UNKNOWN).
   `0xC0`, the hour counter (OBSERVED). The final round returned every code to the baseline apart from `0xC0` (OBSERVED).
 - Polling every 60 s for two and a half days, across three sleeps and many restarts of the reading process, found no
   value drift and no failed read outside sections 2.2 and 2.5 (OBSERVED).
-- No standby or pixel-cleaning period was deliberately observed. Whether DDC/CI answers while the proximity sensor has
-  blanked the screen, in standby or during a cleaning is UNKNOWN on this unit; on a PG32UCDM the monitor drops off
-  DDC/CI during cleaning (**PUBLISHED**, pixel-clean-gui).
+- No pixel-cleaning period was deliberately observed. Whether DDC/CI answers while the proximity sensor has blanked the
+  screen or during a cleaning is UNKNOWN on this unit; on a PG32UCDM the monitor drops off DDC/CI during cleaning
+  (**PUBLISHED**, pixel-clean-gui). The power button and another input were observed (section 6.7).
 
-## 7. Writing: guidance (nothing here was sent to this unit)
+### 6.7 Switched off by the power button, and another input selected (OBSERVED 2026-11-04, 15:43 to 15:53)
 
-No `SetVCPFeature` was ever sent to this monitor (OBSERVED, section 2.1). The rules below combine the published
-practice of sumi (read-modify-write of packed codes, **PUBLISHED**), KDE PowerDevil (read before write, **PUBLISHED**,
-merge request 456) and the readings above; they are INFERRED as safe, not tested.
+| State | What the PC saw |
+|---|---|
+| **Power button pressed, panel dark** (two periods of one to three minutes; OBSERVED by the owner) | Every listed code kept answering on forced reads and on the 60 s poll; `0xD6` kept reading **`01` on**, `0xE2` `0x0104`, brightness 100; Windows kept the display active at 3440x1440 (WMI `Active` true, the screen list unchanged). One read near a transition returned 18 of 24 codes with `0xE2` = 0. Back on: no pixel cleaning (the power LED did not blink, OBSERVED by the owner), every value as before |
+| **Another input selected** (HDMI 1 with nothing connected, "no signal" on the panel; Auto Input Detection written off first, section 5.9) | Every code kept answering; **`0x60` read `0x11` (HDMI 1)**, **`0xE2` read 0 and brightness 95**: the HDR word and brightness are per input (the DisplayPort values under Windows HDR were `0x0104` and 100); `0xD6` on; Windows kept the display. Back on DisplayPort: `0x60` `0x0F`, `0xE2` `0x0104`, brightness 100 |
+
+So the power button is a panel-off: the scaler, the DisplayPort link and DDC/CI stay alive and `0xD6` does not reflect
+it, which means a host cannot see this state at all (INFERRED from the readings). A selected input without a signal
+likewise keeps the DisplayPort link up. The "no traffic after standby" caution of section 11 has nothing to key on in
+these two states; reads were harmless throughout.
+
+## 7. Writing (47 writes sent to this unit on 2026-11-04)
+
+The write session (14:44 to 16:06, third-party code through `dxva2.dll`'s `SetVCPFeature`, one setting per write, the
+owner approving each one and restoring every value afterwards) wrote 47 words: `0x14`, `0xDC` both bytes, `0xE5`, `0xE6`, `0xED` both bytes, `0xF2` both bytes, `0xF8`, `0xF9`, both named
+bits of `0xFC` and nine of the ten bits of `0xFD` (never `0x0010`). No write returned an I2C error; the only failures were
+the two handle losses after VRR writes (section 2.5). The rules below combine the published practice of sumi
+(read-modify-write of packed codes, **PUBLISHED**), KDE PowerDevil (read before write, **PUBLISHED**, merge request 456)
+and what the session showed; each is tagged.
 
 1. Read the code fresh. Refuse when it reads `0xFE`/`0xFE` (section 6.1) or when the read fails.
 2. Refuse a value outside the capability string's list for that code (or above the read maximum for a plain number).
@@ -561,7 +632,19 @@ merge request 456) and the readings above; they are INFERRED as safe, not tested
    to write the same codes: read back once and keep the other program's value rather than re-applying in a loop
    (INFERRED; no system-wide DDC/CI lock is documented).
 
-What the monitor does with a write to a locked control (an error, silent ignore, or a later application) is UNKNOWN.
+Rules 1 to 4 and 6 were followed throughout the write session and the monitor behaved as they assume: every
+read-modify-write of one byte or one bit left the rest of the word as read, every taken write read back after 50 ms,
+and the dependants moved as sections 6.2 and 6.3 describe (OBSERVED). Rule 5's refusal while `0x0010` reads 1 was never
+exercised (the bit stayed 0), and rules 7 and 8 stay PUBLISHED and INFERRED.
+
+Two more rules the session added (OBSERVED):
+
+9. **Read back, always.** A write the monitor will not take returns no error: `0xDC` under the HDR interlock, an Aura
+   effect while Aura Sync is on and Aura colour `00` were all "accepted" by `SetVCPFeature` and ignored (sections 5.2,
+   5.7, 6.1). Only the read-back tells, and the lock marker does not cover these cases.
+10. **Expect a lost handle after a write that re-plugs the display** (VRR, section 5.10; by the sibling's account also
+    HDR-family and PBP changes): the read-back fails with `0xC026258D`, the value is confirmed by the first read on a new
+    handle, and a repeat of the same absolute write is harmless if the first one did land.
 
 ## 8. Sequences
 
@@ -702,9 +785,9 @@ only a bootstrapper for it:
 | Write-only commands: `0x04`, `0x08` (resets), `0xEC` (ASUS reset), `0xEB` (OSD key injection), `0xE8` (GamePlus nudge) | Never send them automatically; resets only as an explicit user action |
 | Starting or stopping pixel cleaning by accident: a whole-word or stale write of `0xFD` with `0x0010` set; the CLI's "stop" value | Read-modify-write of one bit, `0x0010` cleared; refuse while it reads 1 (section 7) |
 | Weakening burn-in protection (Screen Move, the dimming and detection bits, the reminder, the proximity sensor) on a QD-OLED panel | Only as a direct user action, never from schedules or profiles (INFERRED) |
-| Waking the monitor during its automatic pixel cleaning in standby stops the cleaning (**PUBLISHED**, ASUS user guide p. 3-8) | Never send `0xD6` = on automatically; leave a sleeping monitor alone |
+| Waking the monitor during its automatic pixel cleaning in standby stops the cleaning (**PUBLISHED**, ASUS user guide p. 3-8) | Never send `0xD6` = on automatically; leave a sleeping monitor alone. Note that the power button does not produce a state a host can see (section 6.7): `0xD6` keeps reading on and DDC/CI keeps answering, so this rule can only key on Windows' own standby |
 | Two settings in one code (`0xDC`, `0xED`, `0xF2`, `0xFB`) or a bit field (`0xFC`, `0xFD`) | Change one byte or bit of a fresh read; Aura off as `0x0000` (**PUBLISHED**, plasma-asus) |
-| Writes to locked controls | Refuse at `0xFE`/`0xFE`; in HDR and under Uniform Brightness or Anti-Flicker, brightness reads 100 instead of the marker (section 6.1) |
+| Writes to locked controls | Refuse at `0xFE`/`0xFE`; in HDR and under Uniform Brightness or Anti-Flicker, brightness reads 100 instead of the marker, and a write to a locked `0xDC` is ignored without an error (section 6.1, OBSERVED): read every write back |
 | HDR family (`0xE2` high byte) and PBP (`0xF4`) changes re-plug the display (**PUBLISHED**, sumi) | Explicit actions only; expect handle invalidation (`0xC026258D`) |
 | Input switch (`0x60`) or power off (`0xD6`) leaving a black screen and no DDC/CI (**PUBLISHED**, PowerToys) | Explicit actions with confirmation, never automated |
 | KVM (`0xF3`) moving the USB hub, the Aura device and the user's keyboard to another host (INFERRED) | Never automatic |
@@ -768,13 +851,13 @@ built from defaults; treating 2.17 as an MCCS version.
 
 | # | Question | How to settle |
 |---|---|---|
-| 1 | Does the monitor refuse, ignore or store a write to a locked control (HDR, Uniform Brightness, Anti-Flicker)? | one same-value write in HDR, then a read and the OSD |
-| 2 | Is `0xFD` bit `0x0010` the pixel-cleaning trigger here, and does DDC/CI answer during a cleaning, in standby or after a proximity screen-off? | the owner starts a cleaning from the OSD and reads `0xFD` once afterwards; a read while the sensor has blanked the screen |
+| 1 | ~~Does the monitor refuse, ignore or store a write to a locked control?~~ **Settled 2026-11-04: ignored silently** (no error, the old value reads back; `0xDC` under Windows HDR, section 6.1). Not yet seen: the same under Uniform Brightness or Anti-Flicker, and whether a dropped write is applied later when the lock goes | a write under Uniform Brightness, then release the lock and read |
+| 2 | Is `0xFD` bit `0x0010` the pixel-cleaning trigger here, and does DDC/CI answer during a cleaning or after a proximity screen-off? (**Settled 2026-11-04 for the power button**: DDC/CI keeps answering, `0xD6` keeps reading on, section 6.7) | the owner starts a cleaning from the OSD and reads `0xFD` once afterwards; a read while the sensor has blanked the screen |
 | 3 | Meanings of `0xE9`, `0xF0`, `0xF7`, `0xFA`, `0x5F`, `0x61`, and the `0xFC` bits `0x0002`, `0x0004`, `0x0008`, `0x0080`, `0x0800` | more OSD rounds (OSD timeout and transparency, HDR modes, USB settings) |
 | 4 | `0xE2` with each OSD HDR mode; Adjustable HDR and Dynamic Brightness Boost; the high byte | OSD rounds with Windows HDR on |
 | 5 | GamePlus codes `0xE3`, `0xE4`, `0xE7`, `0xEA`, the `0xE8` values `05`-`08`, and `0xFB`'s function ids | OSD rounds |
 | 6 | KVM `0xF3`: which value is which upstream, and does a write move the hub? | an OSD round; a write only with a second host attached |
-| 7 | `0xED` low byte `00` and `FF` (off, Tailored); can presence be read? | OSD rounds; reads while walking away |
+| 7 | `0xED` low byte `00` and `FF` (off, Tailored); can presence be read? (the three distances and the three times are written and read back, section 5.5) | OSD rounds; reads while walking away |
 | 8 | Does `0xF2` drive the LEDs with Aura Sync on and no USB host? | watch the LEDs with Aura Sync on and the USB cable out |
 | 9 | Does `0x1C2B` speak the `0xEC` protocol, how many LEDs, and does Aura Sync off block USB frames? | the HID report descriptor (read-only), then one `EC B0` |
 | 10 | Whether DisplayWidget Center uses any USB function of this monitor | a USB capture of DisplayWidget Center changing one setting |
